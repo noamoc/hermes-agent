@@ -177,6 +177,26 @@ async def test_mentioned_threads_only_ignores_unmentioned_bot_authored_thread():
 
 
 @pytest.mark.asyncio
+async def test_mentioned_threads_only_ignores_registered_bot_message_thread():
+    """A scheduled gateway post must not open its thread for ambient replies."""
+    adapter = _make_adapter(
+        mentioned_threads_only=True,
+        thread_has_mention=False,
+    )
+    adapter._bot_message_ts.add(THREAD_TS)
+
+    wake = await adapter._should_wake_on_unmentioned_message(
+        event_thread_ts=THREAD_TS,
+        channel_id=CHANNEL_ID,
+        user_id="U_ANY_TEAMMATE",
+        is_thread_reply=True,
+    )
+
+    assert wake is False
+    adapter._thread_contains_explicit_bot_mention.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_mentioned_threads_only_ignores_unmentioned_active_session():
     adapter = _make_adapter(
         mentioned_threads_only=True,
