@@ -5786,7 +5786,8 @@ class SlackAdapter(BasePlatformAdapter):
         if not bot_uid or not cached:
             return False
         return any(
-            f"<@{bot_uid}>" in (_slack_mention_detection_text(message) or "")
+            message.get("user") != bot_uid
+            and f"<@{bot_uid}>" in (_slack_mention_detection_text(message) or "")
             for message in cached.messages
         )
 
