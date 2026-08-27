@@ -609,6 +609,24 @@ class GatewayAuthorizationMixin:
         if pairing_store is not None and pairing_store.is_approved(platform_name, user_id):
             return True
 
+        # Group/channel sender allowlists in config are intentionally scoped to
+        # shared surfaces.  Honor them as an explicit grant before consulting
+        # the platform-wide environment allowlist, which is commonly kept
+        # operator-only for DMs.  Otherwise a configured
+        # ``group_allow_from: ["*"]`` is silently ignored whenever
+        # ``SLACK_ALLOWED_USERS`` (or another platform-wide allowlist) exists,
+        # and every non-operator channel participant is rejected before the
+        # adapter can apply mention gating.
+        if source.chat_type in {"group", "forum", "channel"}:
+            adapter = self._adapter_for_source(source)
+            if adapter is not None:
+                extra = getattr(getattr(adapter, "config", None), "extra", None) or {}
+                group_config_allow = extra.get("group_allow_from")
+                if group_config_allow:
+                    allowed = _coerce_allow_set(group_config_allow)
+                    if user_id in allowed or "*" in allowed:
+                        return True
+
         # Check platform-specific and global allowlists
         platform_allowlist = _auth_env(platform_env_map.get(source.platform, ""))
         group_user_allowlist = ""

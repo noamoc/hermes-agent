@@ -331,6 +331,38 @@ def test_slack_group_wildcard_allows_any_channel_participant(monkeypatch):
     assert runner._is_user_authorized(source) is True
 
 
+def test_slack_group_wildcard_overrides_operator_only_dm_env_allowlist(monkeypatch):
+    """Channel grants remain usable when the platform DM allowlist is narrower."""
+    _clear_auth_env(monkeypatch)
+    monkeypatch.setenv("SLACK_ALLOWED_USERS", "U_OWNER")
+    config = GatewayConfig(
+        platforms={
+            Platform.SLACK: PlatformConfig(
+                enabled=True,
+                extra={"group_allow_from": ["*"], "allow_from": ["U_OWNER"]},
+            )
+        }
+    )
+    runner, _adapter = _make_runner(Platform.SLACK, config, enforces=False)
+    teammate_channel = SessionSource(
+        platform=Platform.SLACK,
+        user_id="U_TEAMMATE",
+        chat_id="C_SEO",
+        user_name="teammate",
+        chat_type="group",
+    )
+    teammate_dm = SessionSource(
+        platform=Platform.SLACK,
+        user_id="U_TEAMMATE",
+        chat_id="D_TEAMMATE",
+        user_name="teammate",
+        chat_type="dm",
+    )
+
+    assert runner._is_user_authorized(teammate_channel) is True
+    assert runner._is_user_authorized(teammate_dm) is False
+
+
 def test_slack_dm_owner_allowlist_does_not_restrict_channel_participants(monkeypatch):
     _clear_auth_env(monkeypatch)
     config = GatewayConfig(
