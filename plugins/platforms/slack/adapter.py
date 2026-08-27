@@ -5698,16 +5698,15 @@ class SlackAdapter(BasePlatformAdapter):
         # Check both the workspace-scoped marker and the bare ts: entries
         # recorded before a team id was learned (or by legacy paths) are bare
         # strings, and a scoped-vs-bare mismatch must not silence the bot.
-        if is_thread_reply and (
-            thread_marker in self._bot_message_ts
-            or event_thread_ts in self._bot_message_ts
-        ):
-            return True
         if (
             thread_marker in self._mentioned_threads
             or event_thread_ts in self._mentioned_threads
         ):
             return True
+        # In mention-opened-thread mode, an explicit mention is the sole
+        # authorization for an unmentioned continuation.  Check this before
+        # bot-root and active-session shortcuts: scheduled reports and other
+        # bot-authored roots must not silently opt their threads into chat.
         if self._slack_mentioned_threads_only():
             if not is_thread_reply:
                 return False
@@ -5716,6 +5715,11 @@ class SlackAdapter(BasePlatformAdapter):
                 thread_ts=event_thread_ts,
                 team_id=team_id,
             )
+        if is_thread_reply and (
+            thread_marker in self._bot_message_ts
+            or event_thread_ts in self._bot_message_ts
+        ):
+            return True
         if is_thread_reply and self._has_active_session_for_thread(
             channel_id=channel_id,
             thread_ts=event_thread_ts,
