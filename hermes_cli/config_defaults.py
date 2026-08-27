@@ -2181,6 +2181,9 @@ DEFAULT_CONFIG = {
         "ignore_other_user_mentions": False,
         # If True, require @mention in Slack thread replies too.
         "thread_require_mention": False,
+        # If True, one explicit @mention opens that thread for every participant,
+        # while unrelated and merely bot-authored threads remain silent.
+        "mentioned_threads_only": False,
         "channel_prompts": {},         # Per-channel ephemeral system prompts
     },
 

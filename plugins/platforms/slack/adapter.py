@@ -5708,6 +5708,14 @@ class SlackAdapter(BasePlatformAdapter):
             or event_thread_ts in self._mentioned_threads
         ):
             return True
+        if self._slack_mentioned_threads_only():
+            if not is_thread_reply:
+                return False
+            return await self._thread_contains_explicit_bot_mention(
+                channel_id=channel_id,
+                thread_ts=event_thread_ts,
+                team_id=team_id,
+            )
         if is_thread_reply and self._has_active_session_for_thread(
             channel_id=channel_id,
             thread_ts=event_thread_ts,
@@ -5743,6 +5751,40 @@ class SlackAdapter(BasePlatformAdapter):
                         self._register_mentioned_thread(event_thread_ts)
                     return True
         return False
+
+    async def _thread_contains_explicit_bot_mention(
+        self,
+        channel_id: str,
+        thread_ts: str,
+        team_id: str = "",
+    ) -> bool:
+        """Return whether any message in a Slack thread mentions this bot.
+
+        This is the restart-safe half of ``mentioned_threads_only``. In-memory
+        mention markers cover threads opened during the current process; after
+        a restart, recover the same authorization from Slack thread history.
+        """
+        if not thread_ts:
+            return False
+
+        cache_key = f"{channel_id}:{thread_ts}:{team_id}"
+        cached = self._thread_context_cache.get(cache_key)
+        if not cached or not cached.messages:
+            await self._fetch_thread_context(
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                current_ts="",
+                team_id=team_id,
+            )
+            cached = self._thread_context_cache.get(cache_key)
+
+        bot_uid = self._team_bot_user_ids.get(team_id, self._bot_user_id)
+        if not bot_uid or not cached:
+            return False
+        return any(
+            f"<@{bot_uid}>" in (_slack_mention_detection_text(message) or "")
+            for message in cached.messages
+        )
 
     async def _handle_slack_message(
         self, event: dict, payload: Optional[dict] = None
@@ -8829,6 +8871,18 @@ class SlackAdapter(BasePlatformAdapter):
             "yes",
             "on",
         }
+
+    def _slack_mentioned_threads_only(self) -> bool:
+        """Only continue threads that explicitly mentioned this bot.
+
+        Unlike ``thread_require_mention``, one mention opens the thread for
+        every participant. Unlike the default behavior, an active session or
+        a bot-authored root does not open an unrelated thread implicitly.
+        """
+        configured = self.config.extra.get("mentioned_threads_only")
+        if isinstance(configured, str):
+            return configured.lower() in {"true", "1", "yes", "on"}
+        return bool(configured)
 
     def _slack_message_addressed_to_other_user(self, text: str, self_uids: set) -> bool:
         """Return True when ``text`` opens by @-mentioning a non-bot user.

@@ -76,7 +76,13 @@ USER_ID = "U_engineer"
 THREAD_TS = "1700000000.000100"
 
 
-def _make_adapter(bot_authored_root: bool = False):
+def _make_adapter(
+    bot_authored_root: bool = False,
+    *,
+    mentioned_threads_only: bool = False,
+    active_session: bool = False,
+    thread_has_mention: bool = False,
+):
     """Build a bare SlackAdapter with the wake-decision state controlled.
 
     None of the 3 legacy in-memory checks pass by default: the bot didn't
@@ -87,7 +93,11 @@ def _make_adapter(bot_authored_root: bool = False):
     adapter.platform = Platform.SLACK
     adapter.config = PlatformConfig(
         enabled=True,
-        extra={"require_mention": True, "strict_mention": False},
+        extra={
+            "require_mention": True,
+            "strict_mention": False,
+            "mentioned_threads_only": mentioned_threads_only,
+        },
     )
     adapter._bot_user_id = BOT_USER_ID
     adapter._team_bot_user_ids = {}
@@ -95,7 +105,7 @@ def _make_adapter(bot_authored_root: bool = False):
     adapter._mentioned_threads = set()
     adapter._thread_context_cache = {}
 
-    adapter._has_active_session_for_thread = lambda **kw: False
+    adapter._has_active_session_for_thread = lambda **kw: active_session
     # Mock _fetch_thread_context so the miss-path doesn't make a real
     # Slack API call. Tests that need a populated cache pre-populate
     # _thread_context_cache directly.
@@ -104,6 +114,9 @@ def _make_adapter(bot_authored_root: bool = False):
     # its result without setting up the full cache path. Helper-specific
     # tests call the real method via the class instead.
     adapter._bot_authored_thread_root = AsyncMock(return_value=bot_authored_root)
+    adapter._thread_contains_explicit_bot_mention = AsyncMock(
+        return_value=thread_has_mention
+    )
 
     return adapter
 
@@ -144,6 +157,54 @@ async def test_wake_decision_returns_true_when_bot_authored_thread_root():
         "human reply in a thread whose root was bot-posted (not via gateway "
         "send) should wake the bot — #63530"
     )
+
+
+@pytest.mark.asyncio
+async def test_mentioned_threads_only_ignores_unmentioned_bot_authored_thread():
+    adapter = _make_adapter(
+        bot_authored_root=True,
+        mentioned_threads_only=True,
+        thread_has_mention=False,
+    )
+    wake = await adapter._should_wake_on_unmentioned_message(
+        event_thread_ts=THREAD_TS,
+        channel_id=CHANNEL_ID,
+        user_id=USER_ID,
+        is_thread_reply=True,
+    )
+    assert wake is False
+    adapter._bot_authored_thread_root.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mentioned_threads_only_ignores_unmentioned_active_session():
+    adapter = _make_adapter(
+        mentioned_threads_only=True,
+        active_session=True,
+        thread_has_mention=False,
+    )
+    wake = await adapter._should_wake_on_unmentioned_message(
+        event_thread_ts=THREAD_TS,
+        channel_id=CHANNEL_ID,
+        user_id="U_ANY_TEAMMATE",
+        is_thread_reply=True,
+    )
+    assert wake is False
+
+
+@pytest.mark.asyncio
+async def test_mentioned_threads_only_allows_any_user_after_thread_mention():
+    adapter = _make_adapter(
+        mentioned_threads_only=True,
+        thread_has_mention=True,
+    )
+    wake = await adapter._should_wake_on_unmentioned_message(
+        event_thread_ts=THREAD_TS,
+        channel_id=CHANNEL_ID,
+        user_id="U_ANY_TEAMMATE",
+        is_thread_reply=True,
+    )
+    assert wake is True
 
 
 # ---------------------------------------------------------------------------

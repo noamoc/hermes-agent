@@ -351,6 +351,25 @@ class TestLoadGatewayConfig:
         assert os.getenv("SLACK_IGNORED_CHANNELS") == "C0123456789,C0987654321"
 
 
+    def test_slack_mentioned_threads_only_reaches_platform_config(
+        self, tmp_path, monkeypatch
+    ):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        (hermes_home / "config.yaml").write_text(
+            "slack:\n"
+            "  require_mention: true\n"
+            "  mentioned_threads_only: true\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        config = load_gateway_config()
+
+        slack_extra = config.platforms[Platform.SLACK].extra
+        assert slack_extra["mentioned_threads_only"] is True
+
+
     def test_typing_status_text_from_nested_platforms_block(self, tmp_path, monkeypatch):
         """``platforms.slack.typing_status_text`` reaches PlatformConfig via
         _merge_platform_map + the from_dict top-level read."""

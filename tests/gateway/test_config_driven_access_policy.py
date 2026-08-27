@@ -53,6 +53,8 @@ def _clear_auth_env(monkeypatch) -> None:
         "QQ_GROUP_ALLOWED_USERS",
         "WHATSAPP_ALLOWED_USERS",
         "TELEGRAM_ALLOWED_USERS",
+        "SLACK_ALLOWED_USERS",
+        "SLACK_ALLOW_ALL_USERS",
         "GATEWAY_ALLOWED_USERS",
         "GATEWAY_ALLOW_ALL_USERS",
         "WECOM_ALLOW_ALL_USERS",
@@ -74,7 +76,11 @@ def _make_runner(platform: Platform, config: GatewayConfig, *, enforces: bool):
 
     runner = object.__new__(GatewayRunner)
     runner.config = config
-    adapter = SimpleNamespace(send=AsyncMock(), enforces_own_access_policy=enforces)
+    adapter = SimpleNamespace(
+        send=AsyncMock(),
+        enforces_own_access_policy=enforces,
+        config=config.platforms[platform],
+    )
     runner.adapters = {platform: adapter}
     runner.pairing_store = MagicMock()
     runner.pairing_store.is_approved.return_value = False
@@ -301,6 +307,58 @@ def test_wecom_open_group_with_per_group_sender_allowlist_is_authorized(monkeypa
     runner, _adapter = _make_runner(Platform.WECOM, config, enforces=True)
 
     assert runner._is_user_authorized(_source(Platform.WECOM, chat_type="group")) is True
+
+
+def test_slack_group_wildcard_allows_any_channel_participant(monkeypatch):
+    _clear_auth_env(monkeypatch)
+    config = GatewayConfig(
+        platforms={
+            Platform.SLACK: PlatformConfig(
+                enabled=True,
+                extra={"group_allow_from": ["*"], "allow_from": ["U_OWNER"]},
+            )
+        }
+    )
+    runner, _adapter = _make_runner(Platform.SLACK, config, enforces=False)
+    source = SessionSource(
+        platform=Platform.SLACK,
+        user_id="U_TEAMMATE",
+        chat_id="C_SEO",
+        user_name="teammate",
+        chat_type="group",
+    )
+
+    assert runner._is_user_authorized(source) is True
+
+
+def test_slack_dm_owner_allowlist_does_not_restrict_channel_participants(monkeypatch):
+    _clear_auth_env(monkeypatch)
+    config = GatewayConfig(
+        platforms={
+            Platform.SLACK: PlatformConfig(
+                enabled=True,
+                extra={"group_allow_from": ["*"], "allow_from": ["U_OWNER"]},
+            )
+        }
+    )
+    runner, _adapter = _make_runner(Platform.SLACK, config, enforces=False)
+    owner_dm = SessionSource(
+        platform=Platform.SLACK,
+        user_id="U_OWNER",
+        chat_id="D_OWNER",
+        user_name="owner",
+        chat_type="dm",
+    )
+    teammate_dm = SessionSource(
+        platform=Platform.SLACK,
+        user_id="U_TEAMMATE",
+        chat_id="D_TEAMMATE",
+        user_name="teammate",
+        chat_type="dm",
+    )
+
+    assert runner._is_user_authorized(owner_dm) is True
+    assert runner._is_user_authorized(teammate_dm) is False
 
 
 # ---------------------------------------------------------------------------
