@@ -227,6 +227,52 @@ async def test_mentioned_threads_only_allows_any_user_after_thread_mention():
     assert wake is True
 
 
+@pytest.mark.asyncio
+async def test_thread_history_recovers_human_mention_after_restart():
+    adapter = _make_adapter(mentioned_threads_only=True)
+    adapter._thread_context_cache = {
+        f"{CHANNEL_ID}:{THREAD_TS}:": _ThreadContextCache(
+            content="ctx",
+            messages=[
+                {
+                    "user": "U_ANY_TEAMMATE",
+                    "text": f"<@{BOT_USER_ID}> please review this",
+                }
+            ],
+        )
+    }
+
+    result = await SlackAdapter._thread_contains_explicit_bot_mention(
+        adapter, CHANNEL_ID, THREAD_TS
+    )
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_thread_history_ignores_bot_self_mention_after_restart():
+    """A status/report post must not authorize its own thread."""
+    adapter = _make_adapter(mentioned_threads_only=True)
+    adapter._thread_context_cache = {
+        f"{CHANNEL_ID}:{THREAD_TS}:": _ThreadContextCache(
+            content="ctx",
+            messages=[
+                {
+                    "user": BOT_USER_ID,
+                    "bot_id": "B_BOT_OWN",
+                    "text": f"Use <@{BOT_USER_ID}> to start a conversation",
+                }
+            ],
+        )
+    }
+
+    result = await SlackAdapter._thread_contains_explicit_bot_mention(
+        adapter, CHANNEL_ID, THREAD_TS
+    )
+
+    assert result is False
+
+
 # ---------------------------------------------------------------------------
 # _bot_authored_thread_root — the API-derived, restart-surviving check
 # ---------------------------------------------------------------------------
