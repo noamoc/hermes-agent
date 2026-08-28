@@ -157,3 +157,15 @@ async def test_forced_channel_wake_checks_still_apply(adapter):
     adapter.handle_message.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_forced_channel_fails_closed_when_bot_identity_is_unavailable(adapter):
+    """An unaddressed channel message must not bypass mention gating."""
+    adapter.config.extra["require_mention"] = True
+    adapter.config.extra["require_mention_channels"] = CHANNEL_ID
+    adapter._bot_user_id = ""
+
+    await adapter._handle_slack_message(_event("unaddressed top-level message"))
+
+    adapter.handle_message.assert_not_called()
+
+
