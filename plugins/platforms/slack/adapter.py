@@ -6206,7 +6206,19 @@ class SlackAdapter(BasePlatformAdapter):
                 if allow_bots == "mentions" and not is_mentioned:
                     return
 
-        if not is_one_to_one_dm and bot_uid:
+        if not is_one_to_one_dm:
+            # A shared channel must fail closed until the bot identity is known.
+            # Without it we cannot recognize an explicit @mention, and the old
+            # ``and bot_uid`` guard bypassed every channel/mention gate.
+            if not bot_uid and not force_process:
+                logger.warning(
+                    "[Slack] Ignoring shared-channel message before bot identity is available: "
+                    "channel=%s team=%s",
+                    channel_id,
+                    team_id,
+                )
+                return
+
             # Check allowed channels — if set, only respond in these channels (whitelist)
             allowed_channels = self._slack_allowed_channels()
             if allowed_channels and channel_id not in allowed_channels:
